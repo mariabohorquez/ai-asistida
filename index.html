@@ -1,0 +1,865 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>SECURE LOGIN PORTAL v1.0</title>
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; }
+
+:root {
+  --green: #00ff41;
+  --yellow: #ffff00;
+  --red: #ff3333;
+  --bg: #0d0d0d;
+  --panel: #0a0f0a;
+}
+
+body {
+  background: var(--bg);
+  color: var(--green);
+  font-family: 'Courier New', Courier, monospace;
+  min-height: 100vh;
+  overflow: hidden;
+}
+
+/* CRT scanlines */
+body::after {
+  content: '';
+  position: fixed;
+  inset: 0;
+  background: repeating-linear-gradient(transparent, transparent 2px, rgba(0,0,0,0.08) 2px, rgba(0,0,0,0.08) 4px);
+  pointer-events: none;
+  z-index: 9999;
+}
+
+.screen {
+  display: none;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  position: fixed;
+  inset: 0;
+  padding: 20px;
+  text-align: center;
+}
+.screen.active { display: flex; }
+
+.panel {
+  background: var(--panel);
+  border: 2px solid var(--green);
+  padding: 28px 32px;
+  max-width: 560px;
+  width: 90%;
+  box-shadow: 0 0 24px rgba(0,255,65,0.15), inset 0 0 40px rgba(0,0,0,0.5);
+}
+
+h1 { font-size: clamp(1em, 3vw, 1.8em); letter-spacing: 3px; text-shadow: 0 0 8px var(--green); margin-bottom: 12px; }
+h2 { font-size: clamp(0.85em, 2vw, 1.2em); color: var(--yellow); letter-spacing: 2px; margin-bottom: 10px; }
+
+button {
+  background: #000;
+  color: var(--green);
+  border: 2px solid var(--green);
+  padding: 10px 22px;
+  font-family: 'Courier New', monospace;
+  font-size: 0.95em;
+  cursor: pointer;
+  letter-spacing: 1px;
+  margin: 6px;
+}
+button:hover { background: var(--green); color: #000; }
+button.red  { border-color: var(--red);    color: var(--red); }
+button.red:hover { background: var(--red); color: #000; }
+
+.small { font-size: 0.72em; color: #556; }
+.warn  { color: var(--yellow); }
+.err   { color: var(--red); }
+.blink { animation: blink 1s step-end infinite; }
+@keyframes blink { 50% { opacity: 0; } }
+
+/* ── LOADING ─────────────────────────────────── */
+.progress-wrap {
+  width: 400px; max-width: 80vw;
+  background: #111; border: 1px solid var(--green);
+  height: 22px; margin: 14px auto; position: relative;
+}
+.progress-bar { height: 100%; background: var(--green); box-shadow: 0 0 6px var(--green); transition: width 80ms; }
+.progress-pct {
+  position: absolute; inset: 0;
+  display: flex; align-items: center; justify-content: center;
+  color: #000; mix-blend-mode: difference; color: #fff; font-size: 0.8em;
+}
+
+/* ── TIC TAC TOE ─────────────────────────────── */
+#ttt-board {
+  display: grid;
+  grid-template-columns: repeat(3, 90px);
+  grid-template-rows: repeat(3, 90px);
+  gap: 4px; margin: 14px auto;
+}
+.ttt-cell {
+  background: #111; border: 2px solid #0a3b0a;
+  font-size: 2.4em; cursor: pointer;
+  display: flex; align-items: center; justify-content: center;
+  transition: background 0.1s;
+}
+.ttt-cell:hover:not(.taken) { background: #0d1f0d; }
+.ttt-cell.taken { cursor: default; }
+
+/* ── POKÉMON ─────────────────────────────────── */
+.poke-field {
+  display: flex; justify-content: space-between;
+  align-items: flex-end; gap: 12px; margin: 12px 0;
+}
+.poke-card { flex: 1; border: 1px solid #333; padding: 10px; background: #060606; }
+.poke-sprite { font-size: 2.8em; display: block; margin: 6px 0; }
+.hp-wrap { background: #111; border: 1px solid #333; height: 10px; margin-top: 4px; }
+.hp-bar  { height: 100%; transition: width 0.4s; }
+.poke-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; margin-top: 10px; }
+.poke-actions button { font-size: 0.8em; padding: 8px 6px; }
+#poke-log {
+  background: #060606; border: 1px solid #222;
+  padding: 10px; font-size: 0.82em; min-height: 52px;
+  margin-top: 10px; text-align: left; line-height: 1.5;
+}
+
+/* ── MARIO ───────────────────────────────────── */
+#mario-canvas { border: 2px solid var(--green); display: block; margin: 0 auto; }
+#mario-hud { display: flex; gap: 24px; justify-content: center; margin-bottom: 6px; font-size: 0.85em; }
+
+/* ── FINAL FORM ──────────────────────────────── */
+.form-group { margin: 10px 0; text-align: left; }
+.form-group label { display: block; margin-bottom: 4px; font-size: 0.88em; }
+.form-group input {
+  background: #050f05; border: 1px solid var(--green);
+  color: var(--green); padding: 9px 12px; width: 100%;
+  font-family: 'Courier New', monospace; font-size: 0.95em;
+}
+.form-group input:focus { outline: none; box-shadow: 0 0 6px var(--green); }
+</style>
+</head>
+<body>
+
+<!-- ══ 0 · PRESS START ══════════════════════════════════════════ -->
+<div id="screen-start" class="screen active">
+  <div class="panel" style="position:relative; overflow:visible">
+    <h1>⚠ SECURE LOGIN PORTAL ⚠</h1>
+    <p class="small">Sistema de Autenticación Multi-Nivel v1.0</p>
+    <p class="small" style="margin-top:6px">Clasificación: ULTRA SEGURO™ · Protocolo: DXIV-B</p>
+    <br>
+    <p>Para continuar, presioná el botón de inicio:</p>
+  </div>
+  <button id="btn-start" style="position:fixed; left:50%; top:58%; transform:translate(-50%,-50%)">
+    ▶ PRESS START ◀
+  </button>
+  <p id="hint1" style="position:fixed;bottom:60px;left:0;right:0;display:none" class="small warn">
+    Tip: el botón sigue siendo un botón.
+  </p>
+  <p id="hint2" style="position:fixed;bottom:40px;left:0;right:0;display:none" class="small" style="color:#333">
+    Tip 2: intentá desde un ángulo inesperado.
+  </p>
+</div>
+
+<!-- ══ LOADING ══════════════════════════════════════════════════ -->
+<div id="screen-loading" class="screen">
+  <h2>VERIFICANDO IDENTIDAD...</h2>
+  <div class="progress-wrap">
+    <div id="prog-bar" class="progress-bar" style="width:0%"></div>
+    <span id="prog-pct" class="progress-pct">0%</span>
+  </div>
+  <p id="prog-msg" class="small" style="margin-top:6px">Iniciando escáner de alma...</p>
+</div>
+
+<!-- ══ 1 · TIC TAC TOE ══════════════════════════════════════════ -->
+<div id="screen-ttt" class="screen">
+  <div class="panel">
+    <h2>NIVEL 1 — VERIFICACIÓN POR COMBATE</h2>
+    <p class="small">Ganale a la IA para autenticarte</p>
+    <p id="ttt-status" class="warn" style="margin:10px 0">Tu turno (X)</p>
+    <div id="ttt-board"></div>
+    <p id="ttt-record" class="small" style="margin-top:6px">G: 0 · D: 0 · E: 0</p>
+    <div id="ttt-skip" style="display:none; margin-top:14px; border-top:1px solid #222; padding-top:14px">
+      <p class="err small" style="margin-bottom:8px">Llevás <span id="ttt-games-count">3</span> partidas sin ganar.</p>
+      <button class="red" onclick="startLoading(2)">Rendirse con dignidad →</button>
+    </div>
+  </div>
+</div>
+
+<!-- ══ 2 · POKÉMON ══════════════════════════════════════════════ -->
+<div id="screen-pokemon" class="screen">
+  <div class="panel">
+    <h2>NIVEL 2 — AUTENTICACIÓN POR COMBATE</h2>
+    <div class="poke-field">
+      <div class="poke-card">
+        <div class="warn" style="font-size:0.8em">HACKZOR &nbsp;<span style="color:#555">Lv.99</span></div>
+        <span class="poke-sprite">👾</span>
+        <div style="font-size:0.75em">HP <span id="e-hp">999</span>/999</div>
+        <div class="hp-wrap"><div id="e-bar" class="hp-bar" style="background:var(--green);width:100%"></div></div>
+      </div>
+      <div style="font-size:1.4em;color:#333;align-self:center">VS</div>
+      <div class="poke-card">
+        <div style="color:#88f;font-size:0.8em">BUGMON &nbsp;<span style="color:#555">Lv.1</span></div>
+        <span class="poke-sprite">🐛</span>
+        <div style="font-size:0.75em">HP <span id="p-hp">1</span>/1</div>
+        <div class="hp-wrap"><div id="p-bar" class="hp-bar" style="background:var(--red);width:100%"></div></div>
+      </div>
+    </div>
+    <div id="poke-log">¿Qué hará BUGMON?</div>
+    <div class="poke-actions" id="poke-btns">
+      <button onclick="pokeAct('tackle')">⚡ TACKLE</button>
+      <button onclick="pokeAct('beg')">🙏 ROGAR</button>
+      <button onclick="pokeAct('cry')">😭 LLORAR</button>
+      <button class="red" onclick="pokeAct('quit')">🚪 RENDIRSE</button>
+    </div>
+    <div id="poke-next" style="display:none;margin-top:12px">
+      <button onclick="startLoading(3)">Continuar →</button>
+    </div>
+  </div>
+</div>
+
+<!-- ══ 3 · MARIO ════════════════════════════════════════════════ -->
+<div id="screen-mario" class="screen">
+  <div>
+    <h2 style="margin-bottom:8px">NIVEL 3 — SUPER LOGIN BROS.</h2>
+    <p class="small">Llegá a la bandera 🚩 para autenticarte</p>
+    <div id="mario-hud" style="margin:8px 0">
+      <span id="mario-lives-disp">❤❤❤</span>
+      <span id="mario-msg" class="small"></span>
+    </div>
+    <canvas id="mario-canvas" width="580" height="260"></canvas>
+    <p class="small" style="margin-top:6px;color:#333">← → / A D mover &nbsp;·&nbsp; ESPACIO / ↑ / W saltar</p>
+    <div id="mario-skip" style="display:none;margin-top:12px">
+      <button class="red" onclick="stopMario(); startLoading(4)">WARP ZONE: saltear nivel →</button>
+    </div>
+  </div>
+</div>
+
+<!-- ══ 4 · SPACE INVADERS ═══════════════════════════════════════ -->
+<div id="screen-invaders" class="screen">
+  <div>
+    <h2 style="margin-bottom:8px">NIVEL 4 — SPACE AUTH INVADERS</h2>
+    <p class="small">Eliminá todos los invasores para autenticarte</p>
+    <div style="display:flex;gap:24px;justify-content:center;margin:8px 0;font-size:0.85em">
+      <span id="inv-lives">❤❤❤</span>
+      <span id="inv-msg" class="small"></span>
+    </div>
+    <canvas id="inv-canvas" width="580" height="268" style="border:2px solid var(--green)"></canvas>
+    <p class="small" style="margin-top:6px;color:#333">← → / A D mover &nbsp;·&nbsp; ESPACIO / W disparar</p>
+    <div id="inv-skip" style="display:none;margin-top:12px">
+      <button class="red" onclick="stopInvaders(); startLoading(5)">CONTINUAR →</button>
+    </div>
+  </div>
+</div>
+
+<!-- ══ 5 · FINAL FORM ═══════════════════════════════════════════ -->
+<div id="screen-form" class="screen">
+  <div class="panel">
+    <h2>ACCESO AL SISTEMA</h2>
+    <p class="small" style="margin-bottom:16px">Por favor ingresá tus credenciales</p>
+    <div class="form-group">
+      <label id="lbl-user">👤 Usuario:</label>
+      <input type="text" id="inp-user" autocomplete="off" placeholder="nombre de usuario">
+    </div>
+    <div class="form-group">
+      <label id="lbl-pass">🔒 Contraseña:</label>
+      <input type="password" id="inp-pass" autocomplete="off" placeholder="contraseña">
+    </div>
+    <div style="margin-top:16px">
+      <button id="btn-fake" onclick="fakeSubmit()">⬆ CERRAR SESIÓN</button>
+    </div>
+    <p id="form-err" class="err small" style="display:none;margin-top:10px"></p>
+    <p id="form-hint" class="small warn" style="display:none;margin-top:8px">Hint: buscá el botón correcto.</p>
+    <p style="margin-top:22px;font-size:0.65em">
+      <a href="#" id="real-btn" onclick="realLogin(event)" style="color:#1a2b1a;text-decoration:none">Cancelar</a>
+    </p>
+  </div>
+</div>
+
+<!-- ══ WIN ══════════════════════════════════════════════════════ -->
+<div id="screen-win" class="screen">
+  <div class="panel">
+    <h1 class="blink" style="color:var(--yellow)">✓ ACCESO CONCEDIDO</h1>
+    <br>
+    <p>Bienvenido al sistema.</p>
+    <br>
+    <p class="small warn blink">Cargando portal de usuario...</p>
+    <div class="progress-wrap" style="margin-top:12px">
+      <div id="win-bar" class="progress-bar" style="width:0%"></div>
+    </div>
+    <p class="small" style="margin-top:8px;color:#2a3b2a">Tiempo estimado: 2 minutos</p>
+  </div>
+</div>
+
+<script>
+// ═══════════════════════════════════════════════════════════
+//  CORE
+// ═══════════════════════════════════════════════════════════
+function show(id) {
+  document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
+  document.getElementById('screen-' + id).classList.add('active');
+}
+
+const LOAD_MSGS = [
+  'Iniciando escáner de alma...', 'Analizando historial de búsquedas...',
+  'Consultando base de datos de villanos...', 'Verificando karma universal...',
+  'Error: módulo karma no encontrado. Reintentando...', 'Calculando índice de sospecha...',
+  'Actualizando Java...', 'Descargando Windows 11...', 'Comprimiendo dignidad...',
+  'Contactando servidores en Siberia...', 'Escaneando iris a través de webcam (broma)',
+];
+
+function startLoading(next) {
+  show('loading');
+  doLoad(next, 0);
+}
+
+function doLoad(next, attempt) {
+  const bar = document.getElementById('prog-bar');
+  const pct = document.getElementById('prog-pct');
+  const msg = document.getElementById('prog-msg');
+  bar.style.background = 'var(--green)';
+  bar.style.width = '0%';
+  let p = 0;
+  const cap = attempt < 1 ? 97 : 102;
+
+  const msgs = [...LOAD_MSGS].sort(() => Math.random() - 0.5);
+  let mi = 0;
+  msg.textContent = msgs[0];
+
+  const iv = setInterval(() => {
+    p += Math.random() * 2 + 0.4;
+    if (Math.random() < 0.04) msg.textContent = msgs[++mi % msgs.length];
+    if (p >= cap) {
+      clearInterval(iv);
+      if (attempt < 1) {
+        bar.style.background = 'var(--red)';
+        pct.textContent = 'ERROR';
+        msg.textContent = 'Error inesperado. Reintentando...';
+        setTimeout(() => doLoad(next, attempt + 1), 1400);
+      } else {
+        bar.style.width = '100%'; pct.textContent = '100%';
+        msg.textContent = 'No se pudo verificar. Continuando igual.';
+        setTimeout(() => goLevel(next), 1300);
+      }
+      return;
+    }
+    const v = Math.min(p, cap);
+    bar.style.width = v + '%';
+    pct.textContent = Math.floor(v) + '%';
+  }, 55);
+}
+
+function goLevel(n) {
+  if (n === 1) { tttInit(); show('ttt'); }
+  else if (n === 2) { pokeInit(); show('pokemon'); }
+  else if (n === 3) { marioInit(); show('mario'); }
+  else if (n === 4) { invadersInit(); show('invaders'); }
+  else if (n === 5) { formInit(); show('form'); }
+}
+
+// ═══════════════════════════════════════════════════════════
+//  SCREEN 0 · PRESS START
+// ═══════════════════════════════════════════════════════════
+const btnStart = document.getElementById('btn-start');
+let misses = 0;
+
+btnStart.addEventListener('mouseover', () => {
+  misses++;
+  if (misses === 6)  document.getElementById('hint1').style.display = 'block';
+  if (misses === 14) document.getElementById('hint2').style.display = 'block';
+  if (misses > 22) return; // slow down after many misses
+  const m = 80;
+  btnStart.style.left   = (m + Math.random() * (window.innerWidth  - m*2)) + 'px';
+  btnStart.style.top    = (m + Math.random() * (window.innerHeight - m*2)) + 'px';
+  btnStart.style.transform = 'none';
+});
+
+btnStart.addEventListener('click', () => startLoading(1));
+
+// ═══════════════════════════════════════════════════════════
+//  LEVEL 1 · TIC TAC TOE  (minimax — inganable)
+// ═══════════════════════════════════════════════════════════
+let tttB, tttG = 0, tttW = 0, tttL = 0, tttE = 0, tttWait = false;
+
+function tttInit() {
+  tttB = Array(9).fill(null); tttWait = false;
+  tttRender(); tttStatus('Tu turno (X)');
+}
+
+function tttStatus(t) { document.getElementById('ttt-status').innerHTML = t; }
+function tttRecord()  { document.getElementById('ttt-record').textContent = `G: ${tttW} · D: ${tttL} · E: ${tttE}`; }
+
+function tttRender() {
+  const el = document.getElementById('ttt-board'); el.innerHTML = '';
+  tttB.forEach((v, i) => {
+    const c = document.createElement('div');
+    c.className = 'ttt-cell' + (v ? ' taken' : '');
+    c.textContent = v || '';
+    if (!v && !tttWait) c.addEventListener('click', () => tttMove(i));
+    el.appendChild(c);
+  });
+}
+
+function tttMove(i) {
+  if (tttB[i] || tttWait) return;
+  tttWait = true;
+  tttB[i] = 'X'; tttRender();
+  const r = tttCheck(tttB);
+  if (r || tttB.every(Boolean)) return tttEnd(r);
+  tttStatus('IA pensando...');
+  setTimeout(() => {
+    tttB[tttBest()] = 'O'; tttRender();
+    const r2 = tttCheck(tttB);
+    if (r2 || tttB.every(Boolean)) return tttEnd(r2);
+    tttWait = false; tttStatus('Tu turno (X)'); tttRender();
+  }, 500);
+}
+
+function tttBest() {
+  let best = -Infinity, idx = 0;
+  tttB.forEach((v, i) => {
+    if (!v) {
+      tttB[i] = 'O';
+      const s = tttMM(tttB, false);
+      tttB[i] = null;
+      if (s > best) { best = s; idx = i; }
+    }
+  });
+  return idx;
+}
+
+function tttMM(b, isMax) {
+  const r = tttCheck(b);
+  if (r === 'O') return 10; if (r === 'X') return -10;
+  if (b.every(Boolean)) return 0;
+  let best = isMax ? -Infinity : Infinity;
+  b.forEach((v, i) => {
+    if (!v) {
+      b[i] = isMax ? 'O' : 'X';
+      const s = tttMM(b, !isMax);
+      b[i] = null;
+      best = isMax ? Math.max(best, s) : Math.min(best, s);
+    }
+  });
+  return best;
+}
+
+const LINES = [[0,1,2],[3,4,5],[6,7,8],[0,3,6],[1,4,7],[2,5,8],[0,4,8],[2,4,6]];
+function tttCheck(b) {
+  for (const [a,c,d] of LINES) if (b[a] && b[a]===b[c] && b[a]===b[d]) return b[a];
+  return null;
+}
+
+function tttEnd(r) {
+  tttG++;
+  document.getElementById('ttt-games-count').textContent = tttG;
+  if (r === 'X') {
+    tttW++;
+    tttStatus('<span class="err">ERROR: Resultado inválido detectado. Reiniciando...</span>');
+    setTimeout(() => { tttB = Array(9).fill(null); tttWait = false; tttStatus('Tu turno (X)'); tttRender(); }, 2000);
+  } else if (r === 'O') {
+    tttL++;
+    tttStatus('<span class="err">DERROTA — Acceso denegado</span>');
+    setTimeout(tttInit, 1800);
+  } else {
+    tttE++;
+    tttStatus('<span class="warn">EMPATE — Autenticación insuficiente</span>');
+    setTimeout(tttInit, 1800);
+  }
+  tttRecord();
+  if (tttG >= 3) document.getElementById('ttt-skip').style.display = 'block';
+}
+
+// ═══════════════════════════════════════════════════════════
+//  LEVEL 2 · POKÉMON
+// ═══════════════════════════════════════════════════════════
+let pHP, eHP, pDead, pDeaths;
+
+function pokeInit() {
+  pHP = 1; eHP = 999; pDead = false; pDeaths = 0;
+  pokeUI(); pokeLog('¿Qué hará BUGMON?');
+  document.getElementById('poke-btns').style.display = 'grid';
+  document.getElementById('poke-next').style.display = 'none';
+}
+
+function pokeUI() {
+  document.getElementById('p-hp').textContent = Math.max(0, pHP);
+  document.getElementById('e-hp').textContent = Math.max(0, eHP);
+  document.getElementById('p-bar').style.width = (Math.max(0, pHP) * 100) + '%';
+  document.getElementById('e-bar').style.width = (Math.max(0, eHP) / 999 * 100) + '%';
+}
+
+function pokeLog(t) { document.getElementById('poke-log').textContent = t; }
+
+function pokeAct(a) {
+  if (pDead) return;
+  document.getElementById('poke-btns').style.display = 'none';
+  if (a === 'tackle') {
+    const dmg = Math.random() < 0.08 ? 1 : 0;
+    eHP -= dmg; pokeUI();
+    pokeLog(dmg ? 'BUGMON usa TACKLE... ¡1 de daño! (998 restantes...)' : 'BUGMON usa TACKLE... ¡no tuvo ningún efecto!');
+  } else if (a === 'beg') {
+    pokeLog('BUGMON suplica clemencia... HACKZOR se ríe. No pasó nada.');
+  } else if (a === 'cry') {
+    pokeLog('BUGMON llora. BUGMON se confundió y se golpeó. ¡BUGMON se desmayó!');
+    pHP = 0; pokeUI();
+    pDead = true;
+    setTimeout(enemyTurn, 600);
+    return;
+  } else if (a === 'quit') {
+    pokeLog('BUGMON se retiró del campo de batalla. Sabia decisión.');
+    setTimeout(() => {
+      document.getElementById('poke-btns').style.display = 'none';
+      document.getElementById('poke-next').style.display = 'block';
+    }, 1400);
+    return;
+  }
+  setTimeout(enemyTurn, 1100);
+}
+
+function enemyTurn() {
+  pokeLog('HACKZOR usa CHEAT CODE...');
+  setTimeout(() => {
+    pHP = 0; pDead = true; pokeUI();
+    pDeaths++;
+    setTimeout(() => {
+      if (pDeaths >= 3) {
+        pokeLog(`BUGMON se desmayó por ${pDeaths}ª vez. Ya basta. Continuá.`);
+        setTimeout(() => document.getElementById('poke-next').style.display = 'block', 1200);
+      } else {
+        pokeLog(`BUGMON se desmayó. (${pDeaths}/3)`);
+        setTimeout(() => { pHP = 1; pDead = false; pokeUI(); document.getElementById('poke-btns').style.display = 'grid'; pokeLog('¿Qué hará BUGMON?'); }, 2000);
+      }
+    }, 700);
+  }, 700);
+}
+
+// ═══════════════════════════════════════════════════════════
+//  LEVEL 3 · MARIO
+// ═══════════════════════════════════════════════════════════
+let rafID = null, invRafID = null;
+
+function stopInvaders() {
+  if (invRafID !== null) { cancelAnimationFrame(invRafID); invRafID = null; }
+}
+
+function marioInit() {
+  const cv = document.getElementById('mario-canvas');
+  const ctx = cv.getContext('2d');
+  const W = cv.width, H = cv.height;
+  let lives = 3, skipShown = false;
+
+  const pl = { x:50, y:180, w:22, h:26, vx:0, vy:0, ground:false };
+
+  const platforms = [
+    {x:0,   y:240, w:220, h:20},
+    {x:240, y:200, w:110, h:16},
+    {x:360, y:160, w:90,  h:16},
+    {x:460, y:200, w:120, h:16},
+  ];
+
+  let flag = { x:548, y:100, pole:140, moving:false };
+
+  const keys = {};
+  const kd = e => { keys[e.key] = true; if([' ','ArrowUp','ArrowLeft','ArrowRight'].includes(e.key)) e.preventDefault(); };
+  const ku = e => { keys[e.key] = false; };
+  document.addEventListener('keydown', kd);
+  document.addEventListener('keyup', ku);
+
+  function livesStr(n) { return '❤'.repeat(n) + '🖤'.repeat(3-n); }
+
+  function reset() {
+    pl.x=50; pl.y=180; pl.vx=0; pl.vy=0; pl.ground=false;
+    flag.x=548; flag.moving=false;
+  }
+
+  function update() {
+    if (keys['ArrowLeft']  || keys['a']) pl.vx -= 0.8;
+    else if (keys['ArrowRight'] || keys['d']) pl.vx += 0.8;
+    else pl.vx *= 0.75;
+    pl.vx = Math.max(-4, Math.min(4, pl.vx));
+
+    if ((keys[' '] || keys['ArrowUp'] || keys['w']) && pl.ground) {
+      pl.vy = -11; pl.ground = false;
+    }
+
+    pl.vy = Math.min(pl.vy + 0.55, 14);
+    pl.x += pl.vx; pl.y += pl.vy;
+    pl.x = Math.max(0, Math.min(W - pl.w, pl.x));
+
+    pl.ground = false;
+    for (const p of platforms) {
+      if (pl.x + pl.w > p.x && pl.x < p.x + p.w && pl.vy >= 0 &&
+          pl.y + pl.h > p.y && pl.y + pl.h <= p.y + p.h + 8) {
+        pl.y = p.y - pl.h; pl.vy = 0; pl.ground = true;
+      }
+    }
+
+    // Flag runs away when player gets within 100px
+    if (Math.abs(pl.x - flag.x) < 120) {
+      flag.x = Math.min(W - 30, flag.x + 4);
+    }
+
+    if (pl.y > H + 40) {
+      lives--;
+      document.getElementById('mario-lives-disp').textContent = livesStr(Math.max(0, lives));
+      if (!skipShown) { skipShown = true; document.getElementById('mario-skip').style.display = 'block'; }
+      if (lives <= 0) {
+        document.getElementById('mario-msg').textContent = '— GAME OVER';
+        stopMario(); return;
+      }
+      reset();
+    }
+  }
+
+  function draw() {
+    // Sky
+    ctx.fillStyle = '#1a1a3e'; ctx.fillRect(0, 0, W, H);
+
+    // Stars
+    ctx.fillStyle = '#fff';
+    [[20,15],[80,30],[200,10],[350,25],[500,8],[560,40]].forEach(([x,y]) => {
+      ctx.fillRect(x, y, 2, 2);
+    });
+
+    // Platforms
+    for (const p of platforms) {
+      ctx.fillStyle = '#4a7c3f'; ctx.fillRect(p.x, p.y, p.w, p.h);
+      ctx.fillStyle = '#5fa34a'; ctx.fillRect(p.x, p.y, p.w, 5);
+      ctx.fillStyle = '#3a6030'; ctx.fillRect(p.x, p.y+5, p.w, p.h-5);
+    }
+
+    // Abyss hint
+    ctx.fillStyle = '#2a1a00';
+    ctx.fillRect(220, 260, 20, H-260);
+    ctx.fillRect(340, 260, 20, H-260);
+    ctx.fillRect(450, 260, 10, H-260);
+    ctx.fillStyle = '#554'; ctx.font = '10px Courier New';
+    ctx.fillText('∞', 225, H-4); ctx.fillText('∞', 345, H-4);
+
+    // Flag pole
+    ctx.fillStyle = '#ccc'; ctx.fillRect(flag.x + 10, flag.y, 3, flag.pole);
+    // Flag triangle
+    ctx.fillStyle = '#ff0';
+    ctx.beginPath();
+    ctx.moveTo(flag.x + 13, flag.y + 2);
+    ctx.lineTo(flag.x + 13, flag.y + 30);
+    ctx.lineTo(flag.x + 38, flag.y + 16);
+    ctx.closePath(); ctx.fill();
+
+    // Player body
+    ctx.fillStyle = '#c0392b'; ctx.fillRect(pl.x, pl.y, pl.w, pl.h);
+    // Skin
+    ctx.fillStyle = '#f5cba7'; ctx.fillRect(pl.x+3, pl.y+4, 16, 10);
+    // Hat
+    ctx.fillStyle = '#e74c3c'; ctx.fillRect(pl.x-2, pl.y-6, pl.w+4, 7);
+    ctx.fillStyle = '#922b21'; ctx.fillRect(pl.x, pl.y-2, pl.w, 2);
+    // Eyes
+    ctx.fillStyle = '#000';
+    ctx.fillRect(pl.x+5,  pl.y+5, 3, 3);
+    ctx.fillRect(pl.x+14, pl.y+5, 3, 3);
+    // Overalls
+    ctx.fillStyle = '#2471a3'; ctx.fillRect(pl.x+2, pl.y+14, pl.w-4, pl.h-14);
+  }
+
+  function loop() {
+    update();
+    draw();
+    if (rafID !== null) rafID = requestAnimationFrame(loop);
+  }
+
+  reset();
+  document.getElementById('mario-lives-disp').textContent = livesStr(3);
+  document.getElementById('mario-msg').textContent = '';
+  document.getElementById('mario-skip').style.display = 'none';
+  rafID = requestAnimationFrame(loop);
+
+  // cleanup on leave stored via closure — stopMario() cancels rafID
+}
+
+function stopMario() {
+  if (rafID !== null) { cancelAnimationFrame(rafID); rafID = null; }
+}
+
+// ═══════════════════════════════════════════════════════════
+//  LEVEL 4 · SPACE INVADERS  (controles invertidos)
+// ═══════════════════════════════════════════════════════════
+function invadersInit() {
+  const cv = document.getElementById('inv-canvas');
+  const ctx = cv.getContext('2d');
+  const W = cv.width, H = cv.height;
+
+  let lives = 3, skipShown = false, gameOver = false;
+  let invDir = 1, invSpeed = 0.7, wave = 0;
+  let bullets = [], bombs = [], shootCD = 0, bombTimer = 60;
+  let player = { x: W / 2 };
+  let invaders = [];
+  const EMOJIS = ['👾','👾','🛸','🛸'];
+
+  function makeInvaders() {
+    invaders = [];
+    for (let r = 0; r < 4; r++)
+      for (let c = 0; c < 9; c++)
+        invaders.push({ x: 40 + c*56, y: 28 + r*38, w:30, h:22, alive:true, row:r });
+  }
+
+  const keys = {};
+  const kd = e => { keys[e.key]=true; if([' ','ArrowUp','ArrowLeft','ArrowRight'].includes(e.key)) e.preventDefault(); };
+  const ku = e => { keys[e.key]=false; };
+  document.addEventListener('keydown', kd);
+  document.addEventListener('keyup',   ku);
+
+  function hudUpdate() {
+    document.getElementById('inv-lives').textContent =
+      '❤'.repeat(Math.max(0,lives)) + '🖤'.repeat(3-Math.max(0,lives));
+  }
+
+  function resetRound() {
+    player.x = W/2; bullets = []; bombs = [];
+    makeInvaders(); invDir = 1; invSpeed = 0.7 + wave*0.35; gameOver = false;
+  }
+
+  function die() {
+    lives--; hudUpdate();
+    if (!skipShown) { skipShown = true; document.getElementById('inv-skip').style.display = 'block'; }
+    if (lives <= 0) { document.getElementById('inv-msg').textContent = 'GAME OVER'; gameOver = true; return; }
+    player.x = W/2; bullets = []; bombs = [];
+  }
+
+  function update() {
+    if (gameOver) return;
+    // ← y → están INVERTIDOS
+    if (keys['ArrowLeft']  || keys['a']) player.x += 4;
+    if (keys['ArrowRight'] || keys['d']) player.x -= 4;
+    player.x = Math.max(15, Math.min(W-15, player.x));
+
+    shootCD--;
+    if ((keys[' '] || keys['ArrowUp'] || keys['w']) && shootCD <= 0) {
+      bullets.push({ x: player.x, y: H-58, vy: -9 });
+      shootCD = 22;
+    }
+
+    bullets = bullets.filter(b => { b.y += b.vy; return b.y > 0; });
+
+    const alive = invaders.filter(i => i.alive);
+    const hitEdge = alive.some(i => (i.x+i.w >= W-8 && invDir>0) || (i.x <= 8 && invDir<0));
+    if (hitEdge) { invDir *= -1; invaders.forEach(i => i.y += 14); invSpeed += 0.12; }
+    invaders.forEach(i => { if (i.alive) i.x += invDir * invSpeed; });
+
+    for (const b of bullets)
+      for (const inv of invaders)
+        if (inv.alive && b.x > inv.x && b.x < inv.x+inv.w && b.y > inv.y && b.y < inv.y+inv.h)
+          { inv.alive = false; b.y = -999; }
+
+    bombTimer--;
+    if (bombTimer <= 0 && alive.length) {
+      const s = alive[Math.floor(Math.random()*alive.length)];
+      bombs.push({ x: s.x+s.w/2, y: s.y+s.h, vy: 3+wave*0.4 });
+      bombTimer = Math.max(18, 55 - wave*5);
+    }
+
+    bombs = bombs.filter(b => {
+      b.y += b.vy;
+      if (Math.abs(b.x - player.x) < 18 && b.y > H-62 && b.y < H-36) { die(); return false; }
+      return b.y < H;
+    });
+
+    if (alive.some(i => i.y+i.h >= H-44)) { die(); if (!gameOver) resetRound(); return; }
+
+    if (alive.length === 0) {
+      wave++;
+      const msg = document.getElementById('inv-msg');
+      msg.textContent = `¡Oleada ${wave+1}! Más rápido...`;
+      setTimeout(() => { if(!gameOver) msg.textContent = ''; }, 1600);
+      resetRound();
+    }
+  }
+
+  function draw() {
+    ctx.fillStyle = '#000820'; ctx.fillRect(0, 0, W, H);
+    ctx.fillStyle = '#fff';
+    [[20,8],[90,22],[210,6],[370,16],[510,9],[545,30],[150,36],[300,13]].forEach(([x,y]) => ctx.fillRect(x,y,2,2));
+
+    ctx.font = '22px serif';
+    for (const inv of invaders)
+      if (inv.alive) ctx.fillText(EMOJIS[inv.row], inv.x, inv.y+inv.h);
+
+    // Nave del jugador
+    ctx.fillStyle = '#0f0';
+    ctx.beginPath(); ctx.moveTo(player.x, H-66); ctx.lineTo(player.x-16, H-42); ctx.lineTo(player.x+16, H-42); ctx.closePath(); ctx.fill();
+    ctx.fillStyle = '#0a0'; ctx.fillRect(player.x-3, H-74, 6, 10);
+
+    ctx.fillStyle = '#ff0';
+    bullets.forEach(b => ctx.fillRect(b.x-2, b.y, 4, 12));
+    ctx.fillStyle = '#f44';
+    bombs.forEach(b => ctx.fillRect(b.x-2, b.y, 4, 10));
+    ctx.fillStyle = '#0a3b0a'; ctx.fillRect(0, H-42, W, 2);
+  }
+
+  function loop() { update(); draw(); if (invRafID !== null) invRafID = requestAnimationFrame(loop); }
+
+  resetRound(); hudUpdate();
+  document.getElementById('inv-msg').textContent = '';
+  document.getElementById('inv-skip').style.display = 'none';
+  invRafID = requestAnimationFrame(loop);
+}
+
+// ═══════════════════════════════════════════════════════════
+//  LEVEL 5 · FINAL FORM
+// ═══════════════════════════════════════════════════════════
+let swapIv, swapValIv, fakeTries = 0, swapped = false;
+
+function formInit() {
+  fakeTries = 0; swapped = false;
+  document.getElementById('lbl-user').textContent = '👤 Usuario:';
+  document.getElementById('lbl-pass').textContent = '🔒 Contraseña:';
+  document.getElementById('form-err').style.display = 'none';
+  document.getElementById('form-hint').style.display = 'none';
+  document.getElementById('inp-user').value = '';
+  document.getElementById('inp-pass').value = '';
+
+  // Labels swap every 2.5s
+  clearInterval(swapIv);
+  swapIv = setInterval(() => {
+    swapped = !swapped;
+    document.getElementById('lbl-user').textContent = swapped ? '🔒 Contraseña:' : '👤 Usuario:';
+    document.getElementById('lbl-pass').textContent = swapped ? '👤 Usuario:' : '🔒 Contraseña:';
+  }, 2500);
+
+  // Values swap every 4s if both non-empty
+  clearInterval(swapValIv);
+  swapValIv = setInterval(() => {
+    const u = document.getElementById('inp-user');
+    const p = document.getElementById('inp-pass');
+    if (u.value && p.value) { const t = u.value; u.value = p.value; p.value = t; }
+  }, 4000);
+}
+
+const fakeErrors = [
+  'Error: este botón cierra la sesión, no la inicia.',
+  'Error 403: ese es el botón equivocado. En serio.',
+  'Error 418: soy una tetera. Acceso denegado.',
+  'Error SUDO: permiso denegado para el usuario "tú".',
+];
+
+function fakeSubmit() {
+  const err = document.getElementById('form-err');
+  err.textContent = fakeErrors[Math.min(fakeTries, fakeErrors.length - 1)];
+  err.style.display = 'block';
+  fakeTries++;
+  if (fakeTries >= 2) document.getElementById('form-hint').style.display = 'block';
+}
+
+function realLogin(e) {
+  e.preventDefault();
+  clearInterval(swapIv); clearInterval(swapValIv);
+  stopMario(); stopInvaders();
+  show('win');
+  // Infinite progress bar
+  const bar = document.getElementById('win-bar');
+  let p = 0;
+  setInterval(() => { p = (p + 0.25) % 100; bar.style.width = p + '%'; }, 50);
+}
+</script>
+</body>
+</html>
