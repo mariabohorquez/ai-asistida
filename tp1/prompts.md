@@ -1,6 +1,6 @@
-# Secuencia de prompts — Worst UI Login Challenge
+# Secuencia de prompts — TP 1: Worst UI Login Challenge
 
-Conversación conducida con **Claude Code** (claude-sonnet-4-6) desde el CLI de Anthropic.
+Conversación conducida con **Claude Code** (claude-sonnet-4-6) en **Claude Desktop**.
 
 ---
 

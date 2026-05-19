@@ -1,0 +1,401 @@
+openapi: 3.1.0
+
+info:
+  title: Worst UI Login Challenge API
+  description: |
+    API REST para el backend del Worst UI Login Challenge (TP 1).
+    Permite registrar los desafíos disponibles, guardar los intentos de cada jugador
+    por nivel y consultar un ranking global de los más frustrados.
+
+    Recursos principales:
+      - **challenges**: los seis niveles del juego (Press Start, TTT, Pokémon, Mario, Space Invaders, Formulario).
+      - **attempts**: cada vez que un jugador intenta superar un nivel.
+      - **leaderboard**: ranking agregado por jugador.
+  version: 1.0.0
+
+servers:
+  - url: http://localhost:8000
+    description: Servidor de desarrollo local
+
+# ─────────────────────────────────────────
+# PATHS
+# ─────────────────────────────────────────
+paths:
+
+  # ── Colección de desafíos ──────────────
+  /challenges:
+    get:
+      summary: Listar todos los desafíos
+      operationId: listChallenges
+      description: Devuelve la lista completa de niveles del juego, ordenados por `level`.
+      responses:
+        '200':
+          description: Lista de desafíos
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Challenge'
+
+    post:
+      summary: Crear un nuevo desafío
+      operationId: createChallenge
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ChallengeInput'
+      responses:
+        '201':
+          description: Desafío creado exitosamente
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Challenge'
+        '400':
+          description: Datos de entrada inválidos (campo requerido ausente o tipo incorrecto)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                code: 400
+                message: "El campo 'name' es requerido"
+
+  # ── Desafío individual ─────────────────
+  /challenges/{challengeId}:
+    parameters:
+      - name: challengeId
+        in: path
+        required: true
+        description: ID numérico del desafío
+        schema:
+          type: integer
+
+    get:
+      summary: Obtener un desafío por ID
+      operationId: getChallenge
+      responses:
+        '200':
+          description: Desafío encontrado
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Challenge'
+        '404':
+          description: Desafío no encontrado
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                code: 404
+                message: "No existe un desafío con id 99"
+
+    delete:
+      summary: Eliminar un desafío
+      operationId: deleteChallenge
+      description: Elimina el desafío y en cascada todos sus intentos asociados.
+      responses:
+        '204':
+          description: Desafío eliminado (sin cuerpo de respuesta)
+        '404':
+          description: Desafío no encontrado
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  # ── Intentos de un desafío ─────────────
+  /challenges/{challengeId}/attempts:
+    parameters:
+      - name: challengeId
+        in: path
+        required: true
+        schema:
+          type: integer
+
+    get:
+      summary: Listar intentos de un desafío
+      operationId: listAttempts
+      parameters:
+        - name: won
+          in: query
+          required: false
+          schema:
+            type: boolean
+          description: >
+            Filtro opcional. `true` devuelve solo intentos exitosos;
+            `false` devuelve solo los fallidos.
+        - name: playerName
+          in: query
+          required: false
+          schema:
+            type: string
+          description: Filtrar por nombre de jugador (coincidencia exacta).
+      responses:
+        '200':
+          description: Lista de intentos (puede estar vacía)
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Attempt'
+        '404':
+          description: Desafío no encontrado
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+    post:
+      summary: Registrar un nuevo intento
+      operationId: createAttempt
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AttemptInput'
+      responses:
+        '201':
+          description: Intento registrado
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Attempt'
+        '400':
+          description: Datos de entrada inválidos
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: Desafío no encontrado
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  # ── Intento individual ─────────────────
+  /challenges/{challengeId}/attempts/{attemptId}:
+    parameters:
+      - name: challengeId
+        in: path
+        required: true
+        schema:
+          type: integer
+      - name: attemptId
+        in: path
+        required: true
+        schema:
+          type: integer
+
+    get:
+      summary: Obtener un intento específico
+      operationId: getAttempt
+      responses:
+        '200':
+          description: Intento encontrado
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Attempt'
+        '404':
+          description: Intento o desafío no encontrado
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+    delete:
+      summary: Eliminar un intento
+      operationId: deleteAttempt
+      responses:
+        '204':
+          description: Intento eliminado
+        '404':
+          description: Intento o desafío no encontrado
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  # ── Leaderboard (iteración 2) ──────────
+  /leaderboard:
+    get:
+      summary: Ranking global de jugadores
+      operationId: getLeaderboard
+      description: >
+        Agrega los intentos de todos los desafíos y devuelve un ranking
+        ordenado por `challengesCompleted` descendente.
+        Endpoint agregado en la segunda iteración sin modificar los paths anteriores.
+      parameters:
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 10
+          description: Cantidad máxima de entradas a retornar.
+      responses:
+        '200':
+          description: Ranking global
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/LeaderboardEntry'
+
+# ─────────────────────────────────────────
+# COMPONENTS / SCHEMAS
+# ─────────────────────────────────────────
+components:
+  schemas:
+
+    Challenge:
+      type: object
+      required:
+        - id
+        - name
+        - level
+        - difficulty
+      properties:
+        id:
+          type: integer
+          example: 3
+        name:
+          type: string
+          example: "Super Login Bros."
+        level:
+          type: integer
+          minimum: 0
+          example: 3
+        description:
+          type: string
+          example: "Plataformer en canvas donde la bandera huye cuando te acercás"
+        difficulty:
+          type: string
+          enum: [easy, medium, hard, impossible]
+          example: hard
+        createdAt:
+          type: string
+          format: date-time
+          example: "2026-05-18T12:00:00Z"
+
+    ChallengeInput:
+      type: object
+      required:
+        - name
+        - level
+        - difficulty
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 100
+          example: "Space Auth Invaders"
+        level:
+          type: integer
+          minimum: 0
+          example: 4
+        description:
+          type: string
+          example: "Space Invaders con los controles izquierda/derecha invertidos"
+        difficulty:
+          type: string
+          enum: [easy, medium, hard, impossible]
+          example: impossible
+
+    Attempt:
+      type: object
+      required:
+        - id
+        - challengeId
+        - playerName
+        - won
+        - attemptedAt
+      properties:
+        id:
+          type: integer
+          example: 137
+        challengeId:
+          type: integer
+          example: 1
+        playerName:
+          type: string
+          example: "usuario_frustrado"
+        durationSeconds:
+          type: integer
+          minimum: 0
+          nullable: true
+          example: 47
+        won:
+          type: boolean
+          example: false
+        attemptedAt:
+          type: string
+          format: date-time
+          example: "2026-05-18T14:30:00Z"
+
+    AttemptInput:
+      type: object
+      required:
+        - playerName
+        - won
+      properties:
+        playerName:
+          type: string
+          minLength: 1
+          maxLength: 50
+          example: "usuario_frustrado"
+        durationSeconds:
+          type: integer
+          minimum: 0
+          nullable: true
+          example: 47
+        won:
+          type: boolean
+          example: false
+
+    LeaderboardEntry:
+      type: object
+      required:
+        - playerName
+        - totalAttempts
+        - challengesCompleted
+      properties:
+        playerName:
+          type: string
+          example: "usuario_frustrado"
+        totalAttempts:
+          type: integer
+          example: 137
+        challengesCompleted:
+          type: integer
+          minimum: 0
+          maximum: 6
+          example: 2
+        fastestCompletionSeconds:
+          type: integer
+          nullable: true
+          example: 180
+
+    Error:
+      type: object
+      required:
+        - code
+        - message
+      properties:
+        code:
+          type: integer
+          example: 404
+        message:
+          type: string
+          example: "Recurso no encontrado"
