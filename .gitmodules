@@ -1,0 +1,3 @@
+[submodule "workout-planner"]
+	path = workout-planner
+	url = https://github.com/mariabohorquez/ironlog.git
